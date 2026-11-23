@@ -1,8 +1,8 @@
 
 importScripts('./photo-cache.js?v=4');
 
-const cacheName = 'checkpoint-podkarpacie-5';
-const shell = ['./index.html','./style.css?v=5','./images.css?v=2','./catalog.js?v=3','./nature-trails.js?v=5','./nature-peaks.js?v=3','./planner.js?v=5','./place-photos.js?v=4','./photo-cache.js?v=4','./lodging.js?v=2','./app.js?v=5','./manifest.webmanifest?v=5','./assets/mark.svg?v=5','./assets/icon-192.png?v=5','./assets/icon-512.png?v=5','./assets/bieszczady.webp','./assets/fraunces.woff','./assets/instrument-sans.woff'];
+const cacheName = 'checkpoint-podkarpacie-6';
+const shell = ['./index.html','./style.css?v=6','./images.css?v=2','./catalog.js?v=3','./nature-trails.js?v=5','./nature-peaks.js?v=3','./planner.js?v=5','./place-photos.js?v=4','./photo-cache.js?v=4','./lodging.js?v=2','./app.js?v=5','./manifest.webmanifest?v=5','./assets/mark.svg?v=5','./assets/icon-192.png?v=5','./assets/icon-512.png?v=5','./assets/bieszczady.webp','./assets/fraunces.woff','./assets/instrument-sans.woff'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)).then(() => self.skipWaiting()));
 });

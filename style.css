@@ -10,11 +10,13 @@
  color-scheme:dark;--bg:#0d1914;--panel:#17281f;--panel-lift:#1d3328;--line:#365245;
  --text:#f3f9ee;--muted:#c1d3c9;--quiet:#a5baaf;--sun:#eaf8aa;--sky:#bce8fa;--mint:#bceca4;
  --focus:#bcf3ff;--radius:20px;--max:1200px;
+ --nav-link-height:48px;--nav-padding:7px;--nav-safe-bottom:env(safe-area-inset-bottom,0px);
+ --nav-height:calc(1px + var(--nav-link-height) + 2 * var(--nav-padding) + var(--nav-safe-bottom));
  --display:"Fraunces",Georgia,serif;
  font:15px/1.5 "Instrument Sans","Segoe UI",system-ui,sans-serif;
 }
 *{box-sizing:border-box}
-html{scroll-padding-top:24px}
+html{scroll-padding:24px 0 calc(var(--nav-height) + 12px)}
 body{margin:0;min-width:280px;background:radial-gradient(ellipse at 18% -14rem,#25463a 0,transparent 42rem),radial-gradient(ellipse at 90% 6rem,#142e32 0,transparent 54rem),var(--bg);color:var(--text)}
 a{color:inherit;text-decoration:none}
 button,input,select,textarea{font:inherit}
@@ -38,10 +40,16 @@ svg{flex:none;vertical-align:middle}
 .brand-wordmark small{display:block;margin-top:7px;font:700 .57rem/1 "Instrument Sans","Segoe UI",system-ui,sans-serif;letter-spacing:.28em;color:var(--sky)}
 .top-catalog{border:1px solid var(--line);border-radius:999px;padding:8px 14px;color:var(--sky);font-size:.85rem;font-weight:650}
 #app{width:min(var(--max),calc(100% - 64px));margin:0 auto;min-height:65vh}
-.app-credit{text-align:center;color:var(--quiet);font-size:.76rem;letter-spacing:.07em;padding:35px 12px calc(105px + env(safe-area-inset-bottom))}
+.app-credit{text-align:center;color:var(--quiet);font-size:.76rem;letter-spacing:.07em;padding:35px 12px calc(var(--nav-height) + 28px)}
 .app-credit span{margin:0 .4em;color:var(--sun)}
-#navigation{position:fixed;z-index:5;bottom:max(14px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:min(570px,calc(100% - 32px));padding:7px;background:#14271e;border:1px solid #4c6c5b;border-radius:19px;box-shadow:0 12px 42px #07120ec9}
-#navigation a{min-width:0;min-height:46px;padding:6px 2px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:12px;color:var(--muted);font-size:.81rem;font-weight:650}
+#navigation{
+ position:fixed;z-index:5;inset:auto 0 0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;
+ padding-block:var(--nav-padding) calc(var(--nav-padding) + var(--nav-safe-bottom));
+ padding-left:max(8px,calc((100% - 680px) / 2),env(safe-area-inset-left,0px));
+ padding-right:max(8px,calc((100% - 680px) / 2),env(safe-area-inset-right,0px));
+ background:#14271e;border-top:1px solid #4c6c5b;box-shadow:0 -8px 28px #07120e80;
+}
+#navigation a{min-width:0;min-height:var(--nav-link-height);padding:6px 2px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:12px;color:var(--muted);font-size:.81rem;font-weight:650}
 #navigation a.active{color:var(--sun);background:#375039;box-shadow:inset 0 0 0 1px #729560}
 #navigation a:not(.active):hover,.top-catalog:hover{background:var(--panel-lift);color:var(--text)}
 .hero{position:relative;display:flex;align-items:center;isolation:isolate;min-height:348px;overflow:hidden;border-radius:26px;border:1px solid #55785f;background:#274232}
@@ -193,7 +201,7 @@ dialog form label{width:100%}
 .alternative-list button:hover{border-color:#83ab8c}
 .alternative-list small{color:var(--muted)}
 #toast:empty{display:none}
-#toast{position:fixed;z-index:8;left:50%;bottom:calc(89px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#314c39;color:#f1fbe8;box-shadow:0 5px 20px #09180f88;border:1px solid #759c79;border-radius:12px;padding:9px 13px;text-align:center;width:max-content;max-width:calc(100% - 28px)}
+#toast{position:fixed;z-index:8;left:50%;bottom:calc(var(--nav-height) + 12px);transform:translateX(-50%);background:#314c39;color:#f1fbe8;box-shadow:0 5px 20px #09180f88;border:1px solid #759c79;border-radius:12px;padding:9px 13px;text-align:center;width:max-content;max-width:calc(100% - 28px)}
 @media(max-width:850px){
  .planner-fields{grid-template-columns:repeat(4,minmax(0,1fr))}
  .build-button{grid-column:1/-1;justify-self:start}
@@ -229,8 +237,8 @@ dialog form label{width:100%}
  .section-head>.button,.section-head>button.secondary{flex:none;font-size:.72rem;padding:6px 8px}
  .page-heading{padding:18px 0}
  .journal-trip,.rating-row{grid-template-columns:1fr}
- #navigation{width:calc(100% - 16px);bottom:max(7px,env(safe-area-inset-bottom));padding:4px;gap:2px;border-radius:14px}
- #navigation a{flex-direction:column;gap:2px;font-size:.68rem;min-height:47px}
+ #navigation{gap:2px}
+ #navigation a{flex-direction:column;gap:2px;font-size:.68rem}
  #navigation a svg{width:17px;height:17px}
 }
 @media(max-width:365px){
