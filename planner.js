@@ -63,7 +63,8 @@ function buildTrip(config, history = {}) {
     const fresh = points.filter(place => !history[place.id]).length / points.length;
     const localStart = route.id === startRoutes[origin] && routeRegion(route) === firstRegion;
     const known = regions[routeRegion(route)].town === route.base;
-    return affinity * 7 + fresh * 1.5 + (localStart ? (mood === 'mix' ? 10 : 3) : 0) + (known ? 0.2 : 0);
+    const trailBonus = mood === 'natura' && points.some(place => place.itinerary) ? 1 : 0;
+    return affinity * 7 + fresh * 1.5 + (localStart ? (mood === 'mix' ? 10 : mood === 'natura' ? 0.3 : 3) : 0) + (known ? 0.2 : 0) + trailBonus;
   }
 }
 
@@ -73,7 +74,9 @@ function alternatives(trip,index) {
   const usedPlaces = new Set(trip.days.flatMap(day => day.ids));
   const region = routeRegion(routeById[current.route]);
   const preferred = tagsForMood[trip.mood] ?? [];
-  const score = route => (routeRegion(route) === region ? 10 : 0) + route.ids.filter(id => placeById[id].tags.some(tag => preferred.includes(tag))).length;
+  const score = route => (routeRegion(route) === region ? 10 : 0) +
+    route.ids.filter(id => placeById[id].tags.some(tag => preferred.includes(tag))).length +
+    (trip.mood === 'natura' && route.ids.some(id => placeById[id].itinerary) ? 2 : 0);
   return routes.map(route => routeForMood(route, trip.mood)).filter(route => route && !usedRoutes.has(route.id) && !route.ids.some(id => usedPlaces.has(id))).sort((a,b)=>score(b)-score(a));
 }
 

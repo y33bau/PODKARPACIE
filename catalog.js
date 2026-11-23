@@ -8,7 +8,7 @@ const regions = {
   roztocze: {name:'Roztocze i okolice', short:'Roztocze', town:'Horyniec-Zdrój', color:'#bf9a95'},
 };
 const categories = {
-  natura:'Natura', szlak:'Szlak', zabytki:'Zabytki', rodzina:'Rodzinnie', muzeum:'Muzeum', relaks:'Relaks'
+  natura:'Natura', szlak:'Szlak', szczyt:'Szczyt', widokowy:'Szlak widokowy', zabytki:'Zabytki', rodzina:'Rodzinnie', muzeum:'Muzeum', relaks:'Relaks'
 };
 const moods = {mix:'Po trochu wszystkiego', natura:'Natura i szlaki', zabytki:'Zabytki i miasta', rodzina:'Rodzinnie', relaks:'Na spokojnie'};
 const origins = ['Łańcut','Rzeszów','Przemyśl','Sanok','Krosno','Ustrzyki Dolne','Tarnobrzeg','Horyniec-Zdrój'];

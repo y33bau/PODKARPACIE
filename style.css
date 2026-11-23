@@ -137,6 +137,13 @@ input[hidden]{display:none}
 .hotel-filters{grid-template-columns:minmax(0,2fr) minmax(105px,1fr) auto}
 .hotel-filters button{min-height:42px}
 .filters-panel .actions,.osm-panel .actions{margin-top:12px}
+.filters-panel .catalog-shortcuts{margin:0 0 14px}
+.catalog-shortcuts button[aria-pressed=true]{background:#3a2642;border-color:#a56b95;color:#fee5f4}
+.catalog-more{justify-content:center;margin-top:16px}
+.trail-details{display:grid;gap:4px;padding:11px 13px;margin:10px 0;border:1px solid var(--line);border-radius:10px}
+.trail-details p,.trail-access{font-size:.86rem}
+.trail-details p + strong{margin-top:5px}
+.trail-access{margin-bottom:12px}
 .osm-panel,.attachment-strip{margin:12px 0}
 .attachment-strip{display:flex;justify-content:space-between;align-items:center;gap:12px}
 summary{cursor:pointer;font-weight:700;color:var(--lavender)}

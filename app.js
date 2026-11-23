@@ -45,7 +45,8 @@ const firstOpen=trip=>{
  return index<0?trip.days.length-1:index;
 };
 let dayIndex=firstOpen(current()), duration=current().days.length;
-let catalog={query:'',region:'all',tag:'all',status:'all'};
+const catalogTag=new URLSearchParams(location.search).get('katalog');
+let catalog={query:'',region:'all',tag:known(categories,catalogTag)?catalogTag:'all',status:'all',limit:24};
 let hotelSearch={query:'',radius:10,saved:false,location:null,results:[],status:'idle'}, selectingHotel=false;
 let lodgingController, lodgingTimer;
 let osm={loading:false,error:false,places:[]};
@@ -133,7 +134,11 @@ function planView(){
  ${act('Notatka','note','secondary','','edit')}${d.complete?'':act('Zmień dzień','alternatives','secondary','','shuffle')}${act('Dodaj punkt','add-stop','secondary','','plus')}${routeLink(d)}</div></article>
  ${staySuggestion(t,d,r)}</div></section>
  <section class="featured"><header class="section-head"><div><span class="eyebrow">Polecajki z katalogu</span><h2>Następne checkpointy</h2></div><a href="#odkrywaj" class="button secondary">Zobacz katalog</a></header>
- <div class="feature-grid">${(t.mood==='natura'?['lancutpark','przadki','wetlinska']:['lancut','gondola','wetlinska']).map(id=>placeCard(placeById[id],true)).join('')}</div></section>`;
+ <div class="feature-grid">${(t.mood==='natura'?featuredNature(routeRegion(r)):['lancut','gondola','wetlinska'].map(id=>placeById[id])).map(p=>placeCard(p,true)).join('')}</div></section>`;
+}
+function featuredNature(region){
+ const trails=natureTrails.filter(p=>p.tags.includes('widokowy'));
+ return [...trails.filter(p=>p.region===region),...trails.filter(p=>p.region!==region)].slice(0,3);
 }
 function stopRow(p,d,index){
  const done=d.done.includes(p.id);
@@ -142,6 +147,8 @@ function stopRow(p,d,index){
  <button type="button" class="icon-button stop-remove" aria-label="Usuń z dnia: ${h(p.name)}" data-action="remove-stop" data-id="${p.id}" ${d.ids.length===1?'disabled':''}>${icon('close')}</button></div>`;
 }
 function routeLink(d){
+ const start=placeById[d.ids[0]];
+ if(start.trailhead)return external(map(start.trailhead),'Mapa startu szlaku','button secondary');
  const points=d.ids.map(id=>pointQuery(placeById[id]));
  if(points.length===1||points.length>5||d.ids.some(id=>placeById[id].tags.includes('szlak')))return external(map(points[0]),'Mapa pierwszego punktu','button secondary');
  const waypoints=points.slice(1,-1).join('|');
@@ -157,7 +164,7 @@ function staySuggestion(t,d,r){
  <div class="actions">${external(findStay((hotel?hotel.name+', ':'')+where+', Polska',dates),'Booking.com','button primary')}
  ${act(hotel?'Zmień nocleg':'Wybierz nocleg','choose-hotel','secondary',routeRegion(r))}${hotel?act('Odepnij','remove-hotel','quiet'):''}</div></aside>`;
 }
-const placeArtIcons={natura:'mountain',szlak:'mountain',zabytki:'pin',rodzina:'compass',muzeum:'book',relaks:'compass'};
+const placeArtIcons={natura:'mountain',szlak:'mountain',szczyt:'mountain',widokowy:'compass',zabytki:'pin',rodzina:'compass',muzeum:'book',relaks:'compass'};
 function photoAttribution(id){
  const photo=placePhotos[id];
  if(!photo)return '';
@@ -173,31 +180,41 @@ function placeCard(p,featured=false){
  return `<article class="place-card ${featured?'featured-card':''} region-${p.region}">
  <div class="place-art"><span class="place-art-icon" aria-hidden="true">${icon(placeArtIcons[p.tags[0]])}</span>${image}<div class="card-tags"><span>${categories[p.tags[0]]}</span>${visited?'<span class="mint">Odwiedzone</span>':''}</div>
  ${p.live?'':`<button type="button" aria-label="${saved?'Usuń z zapisanych':'Zapisz miejsce'}: ${name}" class="icon-button bookmark${saved?' is-saved':''}" aria-pressed="${saved}" data-action="star" data-id="${h(p.id)}">${icon('heart')}</button>`}</div>
- <button type="button" class="place-body" data-action="place" data-id="${h(p.id)}"><small>${icon('pin')} ${h(p.town||regions[p.region].name)}</small><strong>${name}</strong>${featured?'':`<span>${h(p.description)}</span>`}</button></article>`;
+ <button type="button" class="place-body" data-action="place" data-id="${h(p.id)}"><small>${icon('pin')} ${h(p.town||regions[p.region].name)}${p.elevation?` · ${p.elevation} m n.p.m.`:''}</small><strong>${name}</strong>${featured||p.catalogOnly?'':`<span>${h(p.description)}</span>`}</button></article>`;
 }
 
 function catalogView(){
  return title('Katalog Podkarpacia','Odkrywaj miejsca','Zapisuj polecajki, sprawdzaj opinie i dodawaj przystanki do wycieczki.')+
- `<section class="panel filters-panel"><div class="filter-grid">
- <label>Szukaj miejsca<input type="search" id="place-search" value="${h(catalog.query)}" placeholder="np. Solina, zamek, szlak"></label>
+ `<section class="panel filters-panel"><div class="actions catalog-shortcuts" aria-label="Skróty katalogu">${catalogShortcuts()}</div><div class="filter-grid">
+ <label>Szukaj miejsca<input type="search" id="place-search" value="${h(catalog.query)}" placeholder="np. Tarnica, Liwocz, wodospad"></label>
  <label>Rejon<select id="place-region">${options([['all','Wszystkie rejony'],...regionOptions],catalog.region)}</select></label>
  <label>Typ miejsca<select id="place-tag">${options([['all','Wszystkie typy'],...Object.entries(categories)],catalog.tag)}</select></label>
  <label>Twoje miejsca<select id="place-status">${options([['all','Wszystkie miejsca'],['saved','Zapisane'],['visited','Odwiedzone']],catalog.status)}</select></label>
- </div><div class="actions">${act('Poleć mi miejsce','surprise','primary','','dice')}${act('Wyczyść filtry','reset','secondary')}</div></section>
+ </div><div class="actions">${act(catalog.tag==='szczyt'?'Wylosuj szczyt':'Poleć mi miejsce','surprise','primary','','dice')}${act('Wyczyść filtry','reset','secondary')}</div></section>
  <details class="panel osm-panel"><summary>Więcej miejsc z OpenStreetMap</summary><p class="muted">Pobierz punkty z otwartej bazy w pobliżu centrum wybranego rejonu. Domyślnie sprawdzamy okolice Rzeszowa.</p>
  <div class="actions">${act('Pobierz z OpenStreetMap','osm','secondary','','pin')}${external(sources.extract,'Dane regionu w Geofabrik','source-link')}</div>
  <div id="osm-results">${osmOutput()}</div></details>
  <section aria-label="Wyniki katalogu" id="place-results">${placeResults()}</section>`;
 }
+function catalogShortcuts(){
+ return [['all','Wszystkie'],['natura','Natura'],['szczyt','Szczyty Bieszczadów'],['widokowy','Szlaki widokowe']].map(([id,label])=>`<button type="button" data-action="catalog-type" data-id="${id}" class="secondary" aria-pressed="${catalog.tag===id}">${label}</button>`).join('');
+}
 function filteredPlaces(){
  const q=norm(catalog.query).trim();
- return destinations.filter(p=>(catalog.region==='all'||p.region===catalog.region)&&(catalog.tag==='all'||p.tags.includes(catalog.tag))&&
+ const list=destinations.filter(p=>(catalog.region==='all'||p.region===catalog.region)&&(catalog.tag==='all'||p.tags.includes(catalog.tag))&&
  (catalog.status==='all'||(catalog.status==='saved'?state.stars.includes(p.id):state.seen[p.id]))&&
- (!q||norm([p.name,p.town,p.description,regions[p.region].name,...p.tags].join(' ')).includes(q)));
+ (!q||norm([p.name,p.town,p.elevation,p.aliases,p.itinerary,p.description,regions[p.region].name,...p.tags].join(' ')).includes(q)));
+ if(catalog.tag==='szczyt')return list.sort((a,b)=>(b.elevation??0)-(a.elevation??0)||a.name.localeCompare(b.name,'pl'));
+ if(catalog.tag==='natura')return list.sort((a,b)=>Number(!!b.itinerary)-Number(!!a.itinerary));
+ return list;
 }
 function placeResults(){
  const list=filteredPlaces();
- return `<p class="result-count">${list.length} miejsc</p>`+(list.length?`<div class="feature-grid catalog-grid">${list.map(p=>placeCard(p)).join('')}</div>`:'<p class="panel muted">Brak miejsc pasujących do filtrów.</p>');
+ const visible=list.slice(0,catalog.limit);
+ const description=catalog.tag==='szczyt'?'Opisane dojścia znajdziesz w kartach powiązanych szlaków.':'';
+ return `<p class="result-count">${list.length} miejsc${description?' · '+description:''}</p>`+
+ (visible.length?`<div class="feature-grid catalog-grid">${visible.map(p=>placeCard(p)).join('')}</div>`:'<p class="panel muted">Brak miejsc pasujących do filtrów.</p>')+
+ (visible.length<list.length?`<div class="actions catalog-more">${act('Pokaż więcej','catalog-more','secondary')}</div>`:'');
 }
 const mapCenters={centrum:[50.04,22.01],san:[49.78,22.77],bieszczady:[49.19,22.55],solina:[49.4,22.44],beskid:[49.68,21.77],roztocze:[50.19,23.36]};
 function osmOutput(){
@@ -361,7 +378,11 @@ function settingsView(){
  <div class="actions">${act('Pobierz kopię','export','primary')}${act('Wczytaj kopię','import','secondary')}<input type="file" id="backup-file" accept=".json,application/json" hidden></div></section>
  <section class="panel settings-card"><h2>Źródła katalogu</h2><p class="muted">Przystanki opracowano na podstawie regionalnych materiałów i stron atrakcji.</p>
  ${external(sources.travel,'Podkarpackie Travel','source-link')}${external(sources.region,'Portal województwa','source-link')}
- ${external(sources.extract,'Wyciąg OpenStreetMap · Geofabrik','source-link')}${external(sources.registry,'Centralny Wykaz Obiektów Hotelarskich','source-link')}
+ ${external(sources.extract,'Wyciąg OpenStreetMap · Geofabrik','source-link')}
+ ${external(natureSources.peaks,'Wykaz szczytów Bieszczadów · nawierch.pl / OSM','source-link')}
+ ${external(natureSources.peakWiki,'Szczyty Bieszczadów Zachodnich · Wikipedia','source-link')}
+ ${external(natureSources.crown,'Korona Bieszczadów · PTTK','source-link')}
+ ${external(natureSources.pttk,'Mapa szlaków na Podkarpaciu · PTTK','source-link')}${external(sources.registry,'Centralny Wykaz Obiektów Hotelarskich','source-link')}
  ${external(sources.osm,'© autorzy OpenStreetMap · ODbL','source-link')}</section>
  <section class="panel settings-card"><h2>Ilustracje i zdjęcia</h2><div id="photo-credits">${photoCredits()}</div></section></div>`;
 }
@@ -384,18 +405,42 @@ function formDialog(title,body,label,submit){
   render();
  });
 }
+function trailDetails(p){
+ if(!p.itinerary)return '';
+ return `<div class="trail-details"><strong>Przebieg</strong><p>${h(p.itinerary)}</p>
+ <strong>Początek</strong><p>${h(p.trailhead)}</p></div>
+ ${p.park?`<p class="muted trail-access">Sprawdź aktualne komunikaty BdPN. W parku trzymaj się udostępnionych szlaków.</p>`:''}`;
+}
+function peakTrailLinks(p){
+ const related=summitTrailIds[p.summitKey||p.id]??[];
+ if(!related.length)return '';
+ return `<div class="trail-details"><strong>Szlaki w tej okolicy</strong><div class="actions">
+ ${related.map(slug=>placeById['trail-'+slug]).filter(Boolean).map(t=>act(h(t.name),'place','secondary',t.id)).join('')}
+ </div></div>`;
+}
+function placeActions(p){
+ if(p.itinerary)return external(map(p.trailhead),'Mapa startu','button primary')+
+  external(p.website,'Przewodnik po szlaku','button secondary')+(p.park?external(natureSources.park,'Komunikaty BdPN','button secondary'):'');
+ if(p.catalogOnly)return external(map(pointQuery(p)),p.mapQuery?'Punkt szczytu na mapie':'Szukaj szczytu na mapie','button secondary')+external(p.website,'Źródło danych','button secondary');
+ return external(map(p.trailhead||pointQuery(p)),p.trailhead?'Mapa startu':'Mapa','button primary')+
+  external(reviewsLink(pointQuery(p)),'Tripadvisor','button secondary')+
+  external(p.website||sources.travel,p.website?(p.live?'OpenStreetMap':'Strona miejsca'):'Portal turystyczny','button secondary');
+}
 function openPlace(id){
  const p=placeById[id]||osm.places.find(p=>p.id===id);
  if(!p)return;
  const dayOptions=current().days.map((d,i)=>[String(i),'Dzień '+(i+1)+' · '+dayTitle(d,current().mood)]);
  const rating=state.ratings[id];
  dialog(p.name,`<p class="eyebrow">${h(p.town||regions[p.region].name)} · ${p.tags.map(t=>categories[t]).join(' · ')}</p>
- <p class="place-description">${h(p.description)}</p>
+ <p class="place-description">${p.elevation?'<strong>'+p.elevation+' m n.p.m.</strong> · ':''}${h(p.description)}</p>
+ ${trailDetails(p)}
+ ${p.catalogOnly?'<p class="muted trail-access">Położenie wierzchołka. Dostęp sprawdź na mapie szlaków i w komunikatach zarządcy terenu.</p>':''}
+ ${peakTrailLinks(p)}
  ${placePhotos[id]?`<p class="place-credit">Zdjęcie · ${photoAttribution(id)}</p>`:''}
- <div class="actions">${external(map(pointQuery(p)),'Mapa','button primary')}${external(reviewsLink(pointQuery(p)),'Tripadvisor','button secondary')}${external(p.website||sources.travel,p.website?(p.live?'OpenStreetMap':'Strona miejsca'):'Portal turystyczny','button secondary')}</div>
+ <div class="actions">${placeActions(p)}</div>
  ${p.live?'':`<div class="actions dialog-actions">${act(state.stars.includes(id)?'Usuń z zapisanych':'Zapisz miejsce','star','secondary',id,'heart')}
  ${act(rating?'Twoja ocena: '+rating.stars+'/5':'Oceń miejsce','rate','secondary',id)}${act(state.seen[id]?'Cofnij odwiedzenie':'Oznacz odwiedzone','visit-place','secondary',id,'check')}</div>
- <form id="add-placement"><label>Dodaj do wycieczki<select name="day">${options(dayOptions,String(dayIndex))}</select></label><button type="submit">${icon('plus')} Dodaj przystanek</button></form>`}`);
+ ${p.catalogOnly?'':`<form id="add-placement"><label>Dodaj do wycieczki<select name="day">${options(dayOptions,String(dayIndex))}</select></label><button type="submit">${icon('plus')} Dodaj przystanek</button></form>`}`}`);
  modal.querySelector('#add-placement')?.addEventListener('submit',e=>{
   e.preventDefault();
   if(addPoint(id,Number(new FormData(e.currentTarget).get('day')))){modal.close();render();}
@@ -411,7 +456,7 @@ function rate(id){
 }
 function addPoint(id,index){
  const day=current().days[index];
- if(!known(placeById,id)||!day||day.ids.includes(id)){notify('To miejsce jest już w wybranym dniu.');return false;}
+ if(!known(placeById,id)||placeById[id].catalogOnly||!day||day.ids.includes(id)){notify('To miejsce jest już w wybranym dniu.');return false;}
  if(day.ids.length>=24){notify('Dzień mieści maksymalnie 24 przystanki.');return false;}
  day.ids.push(id);
  day.complete=false;
@@ -443,7 +488,8 @@ function changeDuration(value,write=true){
 }
 function suggest(){
  const mood=document.querySelector('#planner [name="mood"]')?.value;
- const all=screen()==='odkrywaj'?filteredPlaces():destinations.filter(p=>mood!=='natura'||naturePlace(p));
+ const list=screen()==='odkrywaj'?filteredPlaces():destinations.filter(p=>mood!=='natura'||naturePlace(p));
+ const all=list.filter(p=>!p.catalogOnly||(screen()==='odkrywaj'&&catalog.tag==='szczyt'));
  const fresh=all.filter(p=>!state.seen[p.id]), bag=fresh.length?fresh:all;
  if(!bag.length){notify('Zmień filtry, żeby wylosować miejsce.');return;}
  openPlace(bag[Math.floor(Math.random()*bag.length)].id);
@@ -482,7 +528,7 @@ document.addEventListener('click',e=>{
   case 'remove-stop':
    if(day.ids.length>1){toggle(day.ids,id);if(day.done.includes(id))toggle(day.done,id);save('Usunięto przystanek z planu.');render();}return;
   case 'add-stop':
-   formDialog('Dodaj przystanek',`<label>Miejsce<select name="place">${options(destinations.filter(p=>!day.ids.includes(p.id)).map(p=>[p.id,p.name+' · '+p.town]),'')}</select></label>`,'Dodaj do dnia '+(dayIndex+1),v=>addPoint(v.get('place'),dayIndex));return;
+   formDialog('Dodaj przystanek',`<label>Miejsce<select name="place">${options(destinations.filter(p=>!p.catalogOnly&&!day.ids.includes(p.id)).map(p=>[p.id,p.name+' · '+p.town]),'')}</select></label>`,'Dodaj do dnia '+(dayIndex+1),v=>addPoint(v.get('place'),dayIndex));return;
   case 'finish':
    if(day.complete){day.complete=false;save('Dzień otwarty ponownie.');render();return;}
    formDialog('Zakończ dzień '+(dayIndex+1),`<p class="muted">Zaznaczone przystanki trafią do dziennika.</p><label>Notatka z dnia<textarea maxlength="2000" name="note" rows="4" placeholder="Co warto zapamiętać?">${h(day.note)}</textarea></label>${day.done.length<day.ids.length?'<label class="check-label"><input name="all" type="checkbox"> Oznacz wszystkie przystanki jako odwiedzone</label>':''}`,'Zakończ dzień',v=>{
@@ -531,7 +577,16 @@ document.addEventListener('click',e=>{
     save('Usunięto wycieczkę.');
    });return;
   }
-  case 'reset':catalog={query:'',region:'all',tag:'all',status:'all'};osm={loading:false,error:false,places:[]};render();return;
+  case 'catalog-type':
+   catalog.tag=id;catalog.limit=24;
+   if(id==='szczyt')catalog.region='all';
+   render();app.querySelector('[data-action="catalog-type"][data-id="'+id+'"]')?.focus({preventScroll:true});return;
+  case 'catalog-more':{
+   const previous=catalog.limit;catalog.limit+=24;
+   document.querySelector('#place-results').innerHTML=placeResults();
+   app.querySelectorAll('#place-results .place-body')[previous]?.focus();return;
+  }
+  case 'reset':catalog={query:'',region:'all',tag:'all',status:'all',limit:24};osm={loading:false,error:false,places:[]};render();return;
   case 'osm':loadOsm();return;
   case 'export':download();return;
   case 'import':document.querySelector('#backup-file').click();return;
@@ -558,7 +613,7 @@ document.addEventListener('submit',e=>{
 document.addEventListener('input',e=>{
  const el=e.target;
  if(el.name==='duration'&&el.validity.valid)changeDuration(Number(el.value),false);
- if(el.id==='place-search'){catalog.query=el.value;document.querySelector('#place-results').innerHTML=placeResults();}
+ if(el.id==='place-search'){catalog.query=el.value;catalog.limit=24;document.querySelector('#place-results').innerHTML=placeResults();}
  if(el.id==='hotel-search'){
   changeHotelLocation(el.value);
   if(knownLocation(el.value))lodgingTimer=setTimeout(searchHotels,550);
@@ -567,7 +622,11 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
  const el=e.target, placeKeys={'place-region':'region','place-tag':'tag','place-status':'status'};
  if(Object.hasOwn(placeKeys,el.id)){
-  catalog[placeKeys[el.id]]=el.value;
+  catalog[placeKeys[el.id]]=el.value;catalog.limit=24;
+  if(el.id==='place-tag'){
+   document.querySelector('.catalog-shortcuts').innerHTML=catalogShortcuts();
+   document.querySelector('.filters-panel [data-action="surprise"]').innerHTML=icon('dice')+(catalog.tag==='szczyt'?'Wylosuj szczyt':'Poleć mi miejsce');
+  }
   document.querySelector('#place-results').innerHTML=placeResults();
   if(el.id==='place-region'){osm={loading:false,error:false,places:[]};document.querySelector('#osm-results').innerHTML='';}
  }
