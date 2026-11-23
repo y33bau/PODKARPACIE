@@ -237,9 +237,45 @@ dialog form label{width:100%}
  .section-head>.button,.section-head>button.secondary{flex:none;font-size:.72rem;padding:6px 8px}
  .page-heading{padding:18px 0}
  .journal-trip,.rating-row{grid-template-columns:1fr}
- #navigation{gap:2px}
- #navigation a{flex-direction:column;gap:2px;font-size:.68rem}
- #navigation a svg{width:17px;height:17px}
+
+ :root{--nav-link-height:54px}
+ #navigation{gap:3px}
+ #navigation a{flex-direction:column;gap:3px;font-size:.75rem;line-height:1.15;white-space:nowrap}
+ #navigation a svg{width:19px;height:19px}
+
+ .button,button:where(:not(.duration,.day-tab,.tick,.stop-name,.place-body,.icon-button,.alternative-list button)){
+  min-height:44px;font-size:.9rem
+ }
+ .icon-button,.tick{width:44px;height:44px}
+ .actions{gap:10px}
+
+ .filters-panel .catalog-shortcuts{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch;
+  padding-bottom:14px;border-bottom:1px solid var(--line)
+ }
+ .catalog-shortcuts button{padding-inline:8px;border-radius:12px;line-height:1.2}
+ .catalog-shortcuts button[aria-pressed=true]{
+  color:var(--bg);background:var(--sun);border-color:var(--sun)
+ }
+ .filters-panel .filter-grid{gap:10px}
+ .filters-panel label:has(#place-search,#place-status),.hotel-filters label:has(#hotel-search){grid-column:1/-1}
+ .filter-grid input,.filter-grid select,.planner-fields input,.planner-fields select{font-size:16px;min-height:44px}
+ .filter-grid select{padding-inline:8px}
+ .filters-panel .filter-grid + .actions{justify-content:space-between}
+ .filters-panel button[data-action="reset"]{background:transparent;border-color:transparent;color:var(--sky)}
+
+ .duration-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;align-items:stretch}
+ .duration{min-height:44px;padding-inline:3px}
+ .duration-input{grid-column:1/-1;justify-content:space-between}
+ .duration-input input{min-height:44px;font-size:16px}
+ .build-button,.hotel-filters button{justify-self:stretch}
+ .route-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .route-actions .primary{grid-column:1/-1}
+ .route-actions :is(button,.button){padding-inline:8px;border-radius:12px}
+ .section-head>.button,.section-head>button.secondary{font-size:.83rem}
+ .osm-panel summary{display:flex;align-items:center;min-height:44px;gap:8px}
+ .osm-panel summary::before{content:"+";color:var(--sun);font-size:1.15rem}
+ .osm-panel[open] summary::before{content:"−"}
 }
 @media(max-width:365px){
  .masthead,#app{width:calc(100% - 20px)}
