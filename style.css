@@ -230,3 +230,16 @@ dialog form label{width:100%}
  .attachment-strip{flex-wrap:wrap}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+
+.photo-offer { display:grid; gap:.65rem; margin:0 0 1rem; }
+.photo-offer h2 { margin:0; font-size:1.05rem; }
+.photo-offer p, .photo-download-status { margin:0 0 .5rem; }
+.photo-offer > button { justify-self:start; }
+.photo-download-progress { display:flex; align-items:center; gap:.6rem; font-variant-numeric:tabular-nums; }
+.photo-download-progress progress { min-width:0; width:min(18rem, 70%); accent-color:var(--mint); }
+.photo-credits { margin-top:1rem; }
+.photo-credits summary { cursor:pointer; }
+.place-preview { margin:.9rem 0 1rem; }
+.place-preview .place-photo { position:static; display:block; width:100%; height:auto; max-height:18rem; object-fit:contain; border-radius:12px; }
+.place-preview .place-photo[hidden] { display:none; }
+.place-preview figcaption { margin-top:.35rem; }

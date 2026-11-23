@@ -51,6 +51,12 @@ let hotelSearch={query:'',radius:10,saved:false,location:null,results:[],status:
 let lodgingController, lodgingTimer;
 let osm={loading:false,error:false,places:[]};
 let toastTimer;
+const photoUrls=[...new Set(Object.values(placePhotos).map(photo=>photo[0]))];
+const photoOfferKey='checkpoint-podkarpacie-photo-offer';
+const photoOfflineSupported=location.protocol!=='file:'&&'caches' in window&&'serviceWorker' in navigator;
+const photoDownload={status:'idle',saved:0,checked:0};
+let showPhotoOffer=true;
+try{showPhotoOffer=localStorage.getItem(photoOfferKey)!=='seen';}catch{}
 
 function readState() {
  try {const saved=localStorage.getItem(storageKey);if(saved)return validate(JSON.parse(saved));}
@@ -92,6 +98,9 @@ function render(){
  const page=screen();
  document.querySelector('#navigation').innerHTML=Object.entries(screens).map(([key,[label,glyph]])=>`<a href="#${key}" ${key===page?'class="active" aria-current="page"':''}>${icon(glyph)}<span>${label}</span></a>`).join('');
  app.innerHTML=({plan:planView,odkrywaj:catalogView,noclegi:hotelsView,dziennik:journalView,ustawienia:settingsView})[page]();
+ if((page==='plan'||page==='odkrywaj')&&photoOfflineSupported){
+  app.querySelector('.page-heading, .trip-hero').insertAdjacentHTML('afterend','<div id="photo-offer">'+photoDownloadOffer()+'</div>');
+ }
  if(storageWarning)app.insertAdjacentHTML('afterbegin','<p class="panel muted">Zapis na tym urządzeniu jest niedostępny. Kopię możesz pobrać w ustawieniach.</p>');
 }
 function title(kicker,name,description=''){
@@ -165,6 +174,69 @@ function staySuggestion(t,d,r){
  ${act(hotel?'Zmień nocleg':'Wybierz nocleg','choose-hotel','secondary',routeRegion(r))}${hotel?act('Odepnij','remove-hotel','quiet'):''}</div></aside>`;
 }
 const placeArtIcons={natura:'mountain',szlak:'mountain',szczyt:'mountain',widokowy:'compass',zabytki:'pin',rodzina:'compass',muzeum:'book',relaks:'compass'};
+function dismissPhotoOffer(){
+ showPhotoOffer=false;
+ try{localStorage.setItem(photoOfferKey,'seen');}catch{}
+}
+function photoDownloadControls(){
+ const {status,saved,checked}=photoDownload, total=photoUrls.length;
+ if(!photoOfflineSupported)return '<p class="muted">Pobieranie offline wymaga przeglądarki z obsługą pamięci podręcznej aplikacji.</p>';
+ const loading=status==='loading', done=status==='done';
+ const message=loading?'Pobieranie miniatur…':done?'Zdjęcia zapisane do użycia offline.':
+  status==='partial'?('Zapisano '+saved+' z '+total+' zdjęć. Spróbuj pobrać pozostałe ponownie.'):
+  status==='error'?'Pobieranie przerwane. Spróbuj ponownie po połączeniu z internetem.':
+  'Zapisz '+total+' miniatur na tym urządzeniu, żeby wyświetlały się także bez internetu.';
+ return `<p class="muted photo-download-status" role="status">${message}</p>
+ ${loading?`<div class="photo-download-progress"><progress max="${total}" value="${checked}" aria-label="Postęp pobierania zdjęć"></progress><span>${checked} / ${total}</span></div>`:''}
+ <div class="actions photo-download-actions">${loading||done?'':act(status==='partial'?'Pobierz brakujące':'Pobierz zdjęcia offline','download-photos','primary')}</div>`;
+}
+function photoDownloadOffer(){
+ if(!showPhotoOffer)return '';
+ return `<section class="panel photo-offer" aria-label="Zdjęcia offline"><h2>Zdjęcia offline</h2>
+ <div data-photo-download>${photoDownloadControls()}</div>
+ ${act(photoDownload.status==='done'?'Zamknij':'Później','dismiss-photos','quiet')}</section>`;
+}
+function refreshPhotoDownload(){
+ const offer=document.querySelector('#photo-offer');
+ if(offer){
+  const active=offer.contains(document.activeElement);
+  offer.innerHTML=photoDownloadOffer();
+  if(active)(offer.querySelector('[data-action="dismiss-photos"]')??app.querySelector('h1'))?.focus({preventScroll:true});
+ }
+ const settings=document.querySelector('#photo-settings');
+ if(settings)settings.innerHTML=photoDownloadControls();
+}
+async function startPhotoDownload(){
+ if(!photoOfflineSupported||photoDownload.status==='loading')return;
+ photoDownload.status='loading';
+ refreshPhotoDownload();
+ try{
+  photoDownload.saved=await downloadPhotoPack(photoUrls,(saved,checked)=>{
+   Object.assign(photoDownload,{saved,checked});
+   for(const bar of app.querySelectorAll('.photo-download-progress')){
+    bar.querySelector('progress').value=checked;
+    bar.querySelector('span').textContent=checked+' / '+photoUrls.length;
+   }
+  });
+  photoDownload.status=photoDownload.saved===photoUrls.length?'done':'partial';
+  if(photoDownload.status==='done'){
+   try{localStorage.setItem(photoOfferKey,'seen');}catch{}
+  }
+ }catch{photoDownload.status='error';}
+ refreshPhotoDownload();
+}
+async function restorePhotoDownload(){
+ if(!photoOfflineSupported)return;
+ try{
+  if(!(await caches.has(photoCacheName)))return;
+  const stored=await storedPhotoUrls(await caches.open(photoCacheName));
+  if(photoDownload.status!=='idle')return;
+  const saved=photoUrls.filter(url=>stored.has(url)).length;
+  if(!saved)return;
+  Object.assign(photoDownload,{saved,status:saved===photoUrls.length?'done':'partial'});
+  refreshPhotoDownload();
+ }catch{}
+}
 function photoAttribution(id){
  const photo=placePhotos[id];
  if(!photo)return '';
@@ -384,7 +456,8 @@ function settingsView(){
  ${external(natureSources.crown,'Korona Bieszczadów · PTTK','source-link')}
  ${external(natureSources.pttk,'Mapa szlaków na Podkarpaciu · PTTK','source-link')}${external(sources.registry,'Centralny Wykaz Obiektów Hotelarskich','source-link')}
  ${external(sources.osm,'© autorzy OpenStreetMap · ODbL','source-link')}</section>
- <section class="panel settings-card"><h2>Ilustracje i zdjęcia</h2><div id="photo-credits">${photoCredits()}</div></section></div>`;
+ <section class="panel settings-card"><h2>Zdjęcia offline</h2><div id="photo-settings">${photoDownloadControls()}</div>
+ <details class="photo-credits"><summary>Autorzy zdjęć i licencje</summary>${photoCredits()}</details></section></div>`;
 }
 function photoCredits(){
  const credits=destinations.filter(p=>placePhotos[p.id]).map(p=>'<li>'+h(p.name)+' · '+photoAttribution(p.id)+'</li>').join('');
@@ -430,13 +503,14 @@ function openPlace(id){
  const p=placeById[id]||osm.places.find(p=>p.id===id);
  if(!p)return;
  const dayOptions=current().days.map((d,i)=>[String(i),'Dzień '+(i+1)+' · '+dayTitle(d,current().mood)]);
- const rating=state.ratings[id];
+ const rating=state.ratings[id], photo=placePhotos[id];
  dialog(p.name,`<p class="eyebrow">${h(p.town||regions[p.region].name)} · ${p.tags.map(t=>categories[t]).join(' · ')}</p>
+ ${photo?`<figure class="place-preview"><img class="place-photo" src="${h(photo[0])}" alt="${h(photo[4]||p.name)}" decoding="async">
+ <figcaption class="place-credit">${photo[4]?h(photo[4])+' · ':''}${photoAttribution(id)}</figcaption></figure>`:''}
  <p class="place-description">${p.elevation?'<strong>'+p.elevation+' m n.p.m.</strong> · ':''}${h(p.description)}</p>
  ${trailDetails(p)}
  ${p.catalogOnly?'<p class="muted trail-access">Położenie wierzchołka. Dostęp sprawdź na mapie szlaków i w komunikatach zarządcy terenu.</p>':''}
  ${peakTrailLinks(p)}
- ${placePhotos[id]?`<p class="place-credit">Zdjęcie · ${photoAttribution(id)}</p>`:''}
  <div class="actions">${placeActions(p)}</div>
  ${p.live?'':`<div class="actions dialog-actions">${act(state.stars.includes(id)?'Usuń z zapisanych':'Zapisz miejsce','star','secondary',id,'heart')}
  ${act(rating?'Twoja ocena: '+rating.stars+'/5':'Oceń miejsce','rate','secondary',id)}${act(state.seen[id]?'Cofnij odwiedzenie':'Oznacz odwiedzone','visit-place','secondary',id,'check')}</div>
@@ -501,6 +575,8 @@ document.addEventListener('click',e=>{
  const {id,action}=button.dataset, trip=current(), day=trip.days[dayIndex];
  switch(action){
   case 'close':modal.close();return;
+  case 'download-photos':void startPhotoDownload();return;
+  case 'dismiss-photos':dismissPhotoOffer();refreshPhotoDownload();return;
   case 'start':
    document.querySelector('#planner').scrollIntoView({behavior:'smooth',block:'center'});
    document.querySelector('.duration.picked, .duration-input input').focus({preventScroll:true});return;
@@ -660,4 +736,5 @@ document.addEventListener('error',e=>{
 window.addEventListener('hashchange',()=>{if(screen()!=='noclegi')selectingHotel=false;render();if(location.hash!=='#app')window.scrollTo(0,0);});
 render();
 save();
+void restorePhotoDownload();
 if(location.protocol!=='file:'&&'serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});

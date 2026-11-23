@@ -7,6 +7,42 @@ const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) +
 const tagsForMood = {natura:['natura','szlak'],zabytki:['zabytki','muzeum'],rodzina:['rodzina'],relaks:['relaks']};
 const startRoutes = {'Łańcut':'zamek','Rzeszów':'rzcentrum','Przemyśl':'przemysl','Sanok':'sanok','Krosno':'kro','Tarnobrzeg':'tarn','Ustrzyki Dolne':'sol','Horyniec-Zdrój':'rad'};
 
+// Warianty prowadzące na ten sam grzbiet lub przez tę samą dolinę
+// mają wspólny rejon, także w starszych propozycjach dnia.
+const bieszczadyDays = [
+  ['zachod', 'cisna', 'dolina', 'cis'],
+  ['zachod', 'cisna', 'grzbiet', 'trail-jaslo-cisna'],
+  ['zachod', 'sine-wiry', 'dolina', 'trail-sine-wiry'],
+  ['zachod', 'chryszczata', 'dolina', 'trail-chryszczata-duszatyn'],
+  ['poloniny', 'wetlinska', 'grzbiet', 'wet trail-wetlinska-wyzna trail-wetlinska-gran trail-smerek-wetlina'],
+  ['poloniny', 'wetlinska', 'dolina', 'wetslow'],
+  ['poloniny', 'carynska', 'grzbiet', 'car trail-carynska-wyznianska'],
+  ['poloniny', 'rawki', 'grzbiet', 'trail-rawki-wyznianska'],
+  ['poloniny', 'rabia-skala', 'grzbiet', 'trail-rabia-wetlina'],
+  ['gorny-san', 'dwernik', 'grzbiet', 'trail-dwernik-nasiczne'],
+  ['gorny-san', 'hylaty', 'dolina', 'trail-hylaty-wodospad'],
+  ['wschod', 'tarnica-halicz', 'grzbiet', 'tar trail-tarnica-wolosate trail-tarnica-szeroki trail-halicz-petla'],
+  ['wschod', 'muczne', 'grzbiet', 'trail-bukowe-muczne'],
+  ['wschod', 'muczne', 'dolina', 'muc'],
+  ['wschod', 'tarnawa', 'dolina', 'trail-torfowiska-tarnawa'],
+];
+const bieszczadyByRoute = Object.fromEntries(bieszczadyDays.flatMap(([zone,area,terrain,ids]) =>
+  ids.split(' ').map(id => [id,{zone,area,terrain}])));
+
+function routeRepetition(route, selected) {
+  const location = bieszczadyByRoute[route.id];
+  if (!location) return 0;
+  let cost = 0;
+  for (const id of selected) {
+    const earlier = bieszczadyByRoute[id];
+    if (!earlier) continue;
+    if (earlier.area === location.area) cost += 12;
+    if (earlier.zone === location.zone) cost += 3;
+    if (earlier.terrain === location.terrain) cost += 0.5;
+  }
+  return cost;
+}
+
 const naturePlace = place => place.tags.includes('natura') ||
   (place.tags.includes('szlak') && !place.tags.some(tag => tag === 'zabytki' || tag === 'muzeum'));
 
@@ -39,19 +75,20 @@ function buildTrip(config, history = {}) {
   const claimed = new Set();
   const days = [];
   for (const region of order) {
-    const candidates = [...byRegion[region]].sort((a,b) => rank(b)-rank(a));
+    const candidates = [...byRegion[region]];
     const block = region === firstRegion && area !== 'all' ? duration : (region === firstRegion && duration === 1 ? 1 : desiredBlock);
-    while (days.length < duration && candidates.length && candidates.length > byRegion[region].length - block) {
-      const route = candidates.shift();
+    for (let i = 0; i < block && days.length < duration && candidates.length; i++) {
+      const ranked = candidates.map(route => ({route,score:rank(route) - routeRepetition(route,claimed)}));
+      const {route} = ranked.reduce((best,candidate) => candidate.score > best.score ? candidate : best);
+      candidates.splice(candidates.indexOf(route),1);
       claimed.add(route.id);
       days.push(dayFrom(route));
     }
     if (days.length === duration) break;
   }
-  for (const route of available) {
-    if (days.length === duration) break;
-    if (!claimed.has(route.id)) days.push(dayFrom(route));
-  }
+  const remaining = available.filter(route => !claimed.has(route.id));
+  remaining.sort((a,b) => routeRepetition(a,claimed) - routeRepetition(b,claimed));
+  for (const route of remaining.slice(0,duration - days.length)) days.push(dayFrom(route));
   const theme = area === 'all' ? regions[firstRegion].short : regions[area].short;
   const name = duration === 1 ? dayTitle(days[0], mood) : duration > 5 && (area === 'all' || days.some(day => routeRegion(routeById[day.route]) !== area)) ? 'Objazd Podkarpacia' : theme;
   return {id:uid(),name,origin,mood,area,date,days,created:Date.now()};
@@ -71,12 +108,13 @@ function buildTrip(config, history = {}) {
 function alternatives(trip,index) {
   const current = trip.days[index];
   const usedRoutes = new Set(trip.days.map(day => day.route));
+  const otherRoutes = trip.days.filter((_,dayIndex) => dayIndex !== index).map(day => day.route);
   const usedPlaces = new Set(trip.days.flatMap(day => day.ids));
   const region = routeRegion(routeById[current.route]);
   const preferred = tagsForMood[trip.mood] ?? [];
   const score = route => (routeRegion(route) === region ? 10 : 0) +
     route.ids.filter(id => placeById[id].tags.some(tag => preferred.includes(tag))).length +
-    (trip.mood === 'natura' && route.ids.some(id => placeById[id].itinerary) ? 2 : 0);
+    (trip.mood === 'natura' && route.ids.some(id => placeById[id].itinerary) ? 2 : 0) - routeRepetition(route,otherRoutes);
   return routes.map(route => routeForMood(route, trip.mood)).filter(route => route && !usedRoutes.has(route.id) && !route.ids.some(id => usedPlaces.has(id))).sort((a,b)=>score(b)-score(a));
 }
 
