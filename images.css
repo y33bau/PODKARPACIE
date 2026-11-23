@@ -1,0 +1,6 @@
+:root {
+ --hero-image:url("assets/bieszczady.webp");
+ --castle-image:url("https://upload.wikimedia.org/wikipedia/commons/e/ed/La%C5%84cut-castle.jpg");
+ --lake-image:url("https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Soli%C5%84skie_Lake%2C_view_to_S%2C_San_river%2C_Subcarpathian_Voivodeship%2C_Poland.jpg/960px-Soli%C5%84skie_Lake%2C_view_to_S%2C_San_river%2C_Subcarpathian_Voivodeship%2C_Poland.jpg");
+ --town-image:url("https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0d/Panorama_miasta_Przemy%C5%9Bl.jpg/960px-Panorama_miasta_Przemy%C5%9Bl.jpg");
+}

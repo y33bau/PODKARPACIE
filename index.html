@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#15111d">
+  <meta name="description" content="Checkpoint Podkarpacie: zaplanuj wycieczkę, odkrywaj miejsca i zapisuj wspomnienia.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="images.css">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Checkpoint Podkarpacie</title>
+</head>
+<body>
+  <a class="skip" href="#app">Przejdź do treści</a>
+  <header class="masthead">
+    <a class="brand" href="#plan" aria-label="Checkpoint Podkarpacie, plan">
+      <img class="brand-mark" src="assets/mark.svg" width="43" height="43" alt="">
+      <span class="brand-wordmark">CHECK<span class="brand-accent">POINT</span><small>PODKARPACIE</small></span>
+    </a>
+    <a class="top-catalog" href="#odkrywaj">Katalog miejsc</a>
+  </header>
+  <main id="app" tabindex="-1"></main>
+  <footer class="app-credit">Checkpoint Podkarpacie <span aria-hidden="true">·</span> Y33bau</footer>
+  <nav id="navigation" aria-label="Główna nawigacja"></nav>
+  <dialog id="modal" aria-labelledby="dialog-title"></dialog>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <noscript>Włącz JavaScript, aby korzystać z planera.</noscript>
+  <script src="catalog.js" defer></script>
+  <script src="planner.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
