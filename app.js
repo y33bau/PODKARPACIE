@@ -46,7 +46,8 @@ const firstOpen=trip=>{
 };
 let dayIndex=firstOpen(current()), duration=current().days.length;
 let catalog={query:'',region:'all',tag:'all',status:'all'};
-let hotelFilters={query:'',region:'all',saved:false}, selectingHotel=false;
+let hotelSearch={query:'',radius:10,saved:false,location:null,results:[],status:'idle'}, selectingHotel=false;
+let lodgingController, lodgingTimer;
 let osm={loading:false,error:false,places:[]};
 let toastTimer;
 
@@ -54,11 +55,13 @@ function readState() {
  try {const saved=localStorage.getItem(storageKey);if(saved)return validate(JSON.parse(saved));}
  catch {storageWarning=true;}
  const trip=buildTrip(seed);
- return {version:1,trips:[trip],active:trip.id,stars:[],hotels:[],seen:{},ratings:{}};
+ return {version:1,trips:[trip],active:trip.id,stars:[],hotels:[],liveStays:{},seen:{},ratings:{}};
 }
 function validate(raw) {
  if(!record(raw)||raw.version!==1||!Array.isArray(raw.trips)||!raw.trips.length||raw.trips.length>500||
  !Array.isArray(raw.stars)||!Array.isArray(raw.hotels)||!record(raw.seen)||!record(raw.ratings))throw Error('backup');
+ const liveStays=Object.fromEntries(Object.values(record(raw.liveStays)?raw.liveStays:{}).map(normalizeSavedLodging).filter(Boolean).map(s=>[s.id,s]));
+ const savedStay=id=>known(stayById,id)||known(liveStays,id);
  const ids=new Set();
  for(const t of raw.trips){
   if(!record(t)||!bounded(t.id,100)||!t.id||ids.has(t.id)||!bounded(t.name,90)||!t.name||!origins.includes(t.origin)||
@@ -69,13 +72,13 @@ function validate(raw) {
    if(!record(d)||!known(routeById,d.route)||!Array.isArray(d.ids)||!d.ids.length||d.ids.length>24||
    d.ids.some(id=>!known(placeById,id))||new Set(d.ids).size!==d.ids.length||!Array.isArray(d.done)||
    d.done.some(id=>!d.ids.includes(id))||new Set(d.done).size!==d.done.length||typeof d.complete!=='boolean'||
-   !bounded(d.note,2000)||(d.stay!==null&&!known(stayById,d.stay)))throw Error('backup');
+   !bounded(d.note,2000)||(d.stay!==null&&!savedStay(d.stay)))throw Error('backup');
   }
  }
  const seen=Object.fromEntries(Object.entries(raw.seen).filter(([id,v])=>known(placeById,id)&&v===true));
  const ratings=Object.fromEntries(Object.entries(raw.ratings).filter(([id,v])=>known(placeById,id)&&record(v)&&Number.isInteger(v.stars)&&v.stars>=1&&v.stars<=5&&bounded(v.note,500)));
- return {version:1,trips:raw.trips,active:ids.has(raw.active)?raw.active:raw.trips[0].id,seen,ratings,
-  stars:[...new Set(raw.stars.filter(id=>known(placeById,id)))],hotels:[...new Set(raw.hotels.filter(id=>known(stayById,id)))]};
+ return {version:1,trips:raw.trips,active:ids.has(raw.active)?raw.active:raw.trips[0].id,seen,ratings,liveStays,
+  stars:[...new Set(raw.stars.filter(id=>known(placeById,id)))],hotels:[...new Set(raw.hotels.filter(savedStay))]};
 }
 function save(message){
  try{localStorage.setItem(storageKey,JSON.stringify(state));storageWarning=false;if(message)notify(message);}
@@ -123,14 +126,14 @@ function planView(){
  <div class="progress"><div class="bar" role="progressbar" aria-label="Zakończone dni" aria-valuenow="${n}" aria-valuemin="0" aria-valuemax="${t.days.length}"><i style="width:${n/t.days.length*100}%"></i></div><span>${n} z ${t.days.length} dni</span></div>
  <div class="day-tabs" aria-label="Dni wycieczki">${t.days.map((day,index)=>`<button type="button" class="day-tab${dayIndex===index?' chosen':''}" aria-pressed="${dayIndex===index}" data-action="day" data-id="${index}"><strong>Dzień ${index+1}${day.complete?icon('check'):''}</strong><small>${t.date?dateText(isoDay(t.date,index)):h(routeById[day.route].base)}</small></button>`).join('')}</div>
  <div class="day-layout">
- <article class="panel route-card"><span class="eyebrow ${d.complete?'mint':''}">${d.complete?'Dzień zakończony':h(regions[routeRegion(r)].name)}</span><h3>${h(r.name)}</h3>
+ <article class="panel route-card"><span class="eyebrow ${d.complete?'mint':''}">${d.complete?'Dzień zakończony':h(regions[routeRegion(r)].name)}</span><h3>${h(dayTitle(d,t.mood))}</h3>
  <div class="stops">${d.ids.map((id,index)=>stopRow(placeById[id],d,index)).join('')}</div>
  ${d.note?`<p class="day-note">${h(d.note)}</p>`:''}
  <div class="actions route-actions">${act(d.complete?'Otwórz dzień ponownie':'Zakończ dzień','finish','primary','','check')}
  ${act('Notatka','note','secondary','','edit')}${d.complete?'':act('Zmień dzień','alternatives','secondary','','shuffle')}${act('Dodaj punkt','add-stop','secondary','','plus')}${routeLink(d)}</div></article>
  ${staySuggestion(t,d,r)}</div></section>
  <section class="featured"><header class="section-head"><div><span class="eyebrow">Polecajki z katalogu</span><h2>Następne checkpointy</h2></div><a href="#odkrywaj" class="button secondary">Zobacz katalog</a></header>
- <div class="feature-grid">${['lancut','gondola','wetlinska'].map(id=>placeCard(placeById[id],true)).join('')}</div></section>`;
+ <div class="feature-grid">${(t.mood==='natura'?['lancutpark','przadki','wetlinska']:['lancut','gondola','wetlinska']).map(id=>placeCard(placeById[id],true)).join('')}</div></section>`;
 }
 function stopRow(p,d,index){
  const done=d.done.includes(p.id);
@@ -148,17 +151,27 @@ function routeLink(d){
 function staySuggestion(t,d,r){
  if(dayIndex===t.days.length-1)return `<aside class="panel sleep-card"><span class="card-icon">${icon('moon')}</span><span class="eyebrow">Ostatni dzień</span><h3>Powrót</h3><p class="muted">Jeśli zostajesz dłużej, sprawdź noclegi w okolicy.</p>
  <div class="actions">${external(findStay(r.base+', Polska'),'Booking.com','button secondary')}${act('Katalog noclegów','show-hotels','secondary',routeRegion(r))}</div></aside>`;
- const hotel=stayById[d.stay], where=hotel?.town||r.base, dates=getStayDates(t,dayIndex);
+ const hotel=stayById[d.stay]||state.liveStays[d.stay], where=hotel?.town||hotel?.searchTown||r.base, dates=getStayDates(t,dayIndex);
  return `<aside class="panel sleep-card"><span class="card-icon">${icon('bed')}</span><span class="eyebrow">${hotel?'Zapisany nocleg':'Propozycja noclegu'}</span><h3>${h(hotel?.name||where)}</h3>
  <p class="muted">${hotel?h(where)+' · ':''}${dates.checkin?dateText(dates.checkin)+' – '+dateText(dates.checkout):'Baza wypadowa po dniu '+(dayIndex+1)}</p>
  <div class="actions">${external(findStay((hotel?hotel.name+', ':'')+where+', Polska',dates),'Booking.com','button primary')}
  ${act(hotel?'Zmień nocleg':'Wybierz nocleg','choose-hotel','secondary',routeRegion(r))}${hotel?act('Odepnij','remove-hotel','quiet'):''}</div></aside>`;
 }
-const artRegions={centrum:'zamek',san:'przemysl',solina:'solina',bieszczady:'bieszczady',beskid:'beskid',roztocze:'roztocze'};
+const placeArtIcons={natura:'mountain',szlak:'mountain',zabytki:'pin',rodzina:'compass',muzeum:'book',relaks:'compass'};
+function photoAttribution(id){
+ const photo=placePhotos[id];
+ if(!photo)return '';
+ const [,file,author,license]=photo;
+ const label=license==='pd'?'Domena publiczna':license==='cc0'?'CC0 1.0':'CC '+license.replace('/',' ').replace('/pl',' PL').toUpperCase();
+ const rights=license==='pd'?'':license==='cc0'?'https://creativecommons.org/publicdomain/zero/1.0/':'https://creativecommons.org/licenses/'+license+'/';
+ return external(file,h(author),'source-link')+' · '+(rights?external(rights,label,'source-link'):label);
+}
 function placeCard(p,featured=false){
- const saved=state.stars.includes(p.id), visited=state.seen[p.id], name=h(p.name);
+ const saved=state.stars.includes(p.id), visited=state.seen[p.id], name=h(p.name), photo=placePhotos[p.id];
+ const image=photo?' <img src="'+h(photo[0])+'" class="place-photo" alt="" loading="lazy" decoding="async">':'';
+
  return `<article class="place-card ${featured?'featured-card':''} region-${p.region}">
- <div class="place-art art-${artRegions[p.region]}"><div class="card-tags"><span>${categories[p.tags[0]]}</span>${visited?'<span class="mint">Odwiedzone</span>':''}</div>
+ <div class="place-art"><span class="place-art-icon" aria-hidden="true">${icon(placeArtIcons[p.tags[0]])}</span>${image}<div class="card-tags"><span>${categories[p.tags[0]]}</span>${visited?'<span class="mint">Odwiedzone</span>':''}</div>
  ${p.live?'':`<button type="button" aria-label="${saved?'Usuń z zapisanych':'Zapisz miejsce'}: ${name}" class="icon-button bookmark${saved?' is-saved':''}" aria-pressed="${saved}" data-action="star" data-id="${h(p.id)}">${icon('heart')}</button>`}</div>
  <button type="button" class="place-body" data-action="place" data-id="${h(p.id)}"><small>${icon('pin')} ${h(p.town||regions[p.region].name)}</small><strong>${name}</strong>${featured?'':`<span>${h(p.description)}</span>`}</button></article>`;
 }
@@ -217,35 +230,114 @@ async function loadOsm(){
  }catch{request.error=true;}
  finally{request.loading=false;request.finished=true;update();}
 }
+
 function hotelDates(){return selectingHotel?getStayDates(current(),dayIndex):null;}
 function hotelLinks(dates){
- const town=hotelFilters.region==='all'?'Podkarpackie':regions[hotelFilters.region].town;
- return external(findStay(town+', Polska',dates),'Szukaj na Booking.com','button primary')+
- external(reviewsLink(town+' hotele'),'Opinie na Tripadvisor','button secondary')+external(sources.registry,'Rejestr CWOH','button secondary');
+ const town=hotelSearch.location?.town||hotelSearch.query.trim();
+ const destination=town||'Podkarpackie';
+ return external(findStay(destination+', Polska',dates),'Sprawdź na Booking.com','button primary')+
+ external(reviewsLink(destination+' noclegi'),'Opinie na Tripadvisor','button secondary');
 }
 function hotelsView(){
  const dates=hotelDates();
- return title('Baza noclegowa','Znajdź nocleg','Hotele, pensjonaty i schroniska blisko trasy.')+
+ return title('Noclegi','Znajdź nocleg','Wpisz miejscowość i wybierz, jak daleko szukać.')+
  (selectingHotel?`<div class="panel attachment-strip"><p>Wybierasz nocleg po dniu ${dayIndex+1}${dates.checkin?' · '+dateText(dates.checkin)+' – '+dateText(dates.checkout):''}</p>${act('Anuluj wybór','cancel-hotel','secondary')}</div>`:'')+
- `<section class="panel filters-panel"><div class="filter-grid hotel-filters">
- <label>Szukaj po nazwie lub miejscowości<input type="search" id="hotel-search" value="${h(hotelFilters.query)}" placeholder="np. Polańczyk, Wetlina, SPA"></label>
- <label>Rejon<select id="hotel-region">${options([['all','Wszystkie rejony'],...regionOptions],hotelFilters.region)}</select></label>
- <label class="check-label"><input type="checkbox" id="hotel-saved" ${hotelFilters.saved?'checked':''}> Tylko zapisane</label></div>
- <div class="actions" id="hotel-links">${hotelLinks(dates)}</div><p class="muted provider-note">Ceny i dostępność sprawdzisz na stronie rezerwacji. Przypięcie noclegu zapisuje Twój wybór w planie.</p></section>
+ `<section class="panel filters-panel">
+ <form id="hotel-location-form" class="filter-grid hotel-filters">
+ <label>Miejscowość<input type="search" id="hotel-search" name="location" list="hotel-towns" maxlength="100" required value="${h(hotelSearch.query)}" placeholder="np. Polańczyk, Łańcut, Wetlina"></label>
+ <datalist id="hotel-towns">${options(Object.keys(lodgingTowns).map(town=>[town,town]),'')}</datalist>
+ <label>Promień<select id="hotel-radius" name="radius">${options(lodgingRadii.map(n=>[String(n),n+' km']),String(hotelSearch.radius))}</select></label>
+ <button type="submit" class="primary">${icon('pin')} Szukaj noclegów</button>
+ </form>
+ <label class="check-label"><input type="checkbox" id="hotel-saved" ${hotelSearch.saved?'checked':''}> Tylko zapisane</label>
+ <div class="actions" id="hotel-links">${hotelLinks(dates)}</div>
+ <p class="muted provider-note">Ceny i dostępność sprawdzisz na stronie rezerwacji. Dane o obiektach: ${external(sources.osm,'© autorzy OpenStreetMap','source-link')}.</p></section>
  <section aria-label="Wyniki noclegów" id="hotel-results">${hotelResults(dates)}</section>`;
 }
+function nearbyCatalog(location,radius){
+ if(!location)return [];
+ return stays.flatMap(stay=>{
+  const point=lodgingTowns[stay.town];
+  if(!point || lodgingDistance(location.point,point)>radius)return [];
+  return [stay];
+ });
+}
 function hotelResults(dates){
- const q=norm(hotelFilters.query).trim();
- const list=stays.filter(s=>(hotelFilters.region==='all'||s.region===hotelFilters.region)&&(!hotelFilters.saved||state.hotels.includes(s.id))&&
- (!q||norm([s.name,s.town,s.type].join(' ')).includes(q)));
- return `<p class="result-count">${list.length} obiektów</p>`+(list.length?`<div class="hotel-grid">${list.map(s=>{
-  const saved=state.hotels.includes(s.id);
-  return `<article class="panel hotel-card"><div class="hotel-top"><span class="card-icon">${icon('bed')}</span>
-  <button type="button" aria-label="${saved?'Usuń z zapisanych':'Zapisz nocleg'}: ${h(s.name)}" aria-pressed="${saved}" class="icon-button${saved?' is-saved':''}" data-action="save-hotel" data-id="${s.id}">${icon('heart')}</button></div>
-  <small>${h(s.town)} · ${h(s.type)}</small><h2>${h(s.name)}</h2>
-  <div class="actions">${external(findStay(s.name+', '+s.town+', Polska',dates),'Booking.com','button secondary')}${external(reviewsLink(s.name+' '+s.town),'Tripadvisor','button secondary')}
-  ${selectingHotel?act('Przypnij nocleg','attach-hotel','primary',s.id):external(map(s.name+', '+s.town),'Mapa','button secondary')}</div></article>`;
- }).join('')}</div>`:'<p class="panel muted">Brak obiektów pasujących do filtrów.</p>');
+ const {saved,location,results,status,radius}=hotelSearch;
+ let list=results, note='';
+ if(saved){
+  list=state.hotels.map(id=>stayById[id]||state.liveStays[id]).filter(Boolean);
+  note=list.length?'Zapisane noclegi: '+list.length:'Zapisz nocleg sercem, żeby widzieć go tutaj.';
+ }else if(status==='idle'){
+  note='Wpisz miejscowość albo wybierz ją z podpowiedzi.';
+ }else if(status==='loading'){
+  note='Szukam noclegów…';
+ }else if(status==='unknown'){
+  note='Nie udało się rozpoznać miejscowości. Sprawdź pisownię lub wybierz podpowiedź.';
+ }else if(status==='error'){
+  list=nearbyCatalog(location,radius);
+  note=list.length?'Mapa chwilowo niedostępna. Poniżej noclegi z katalogu w okolicy '+location.town+'.':'Nie udało się pobrać noclegów. Możesz ponowić wyszukiwanie lub sprawdzić Booking.com.';
+ }else{
+  note=list.length?location.town+' · '+list.length+' wyników w promieniu '+radius+' km':'Brak oznaczonych noclegów w pobliżu '+location.town+'. Zwiększ promień.';
+ }
+ return `<p class="result-count" role="status">${h(note)}</p>`+(list.length?`<div class="hotel-grid">${list.map(s=>hotelCard(s,dates)).join('')}</div>`:'');
+}
+function hotelCard(s,dates){
+ const saved=state.hotels.includes(s.id), town=s.town||s.searchTown;
+ const query=[s.name,town,'Polska'].filter(Boolean).join(', ');
+ const meta=[town,s.type,Number.isFinite(s.distance)?(s.distance<1?Math.round(s.distance*1000)+' m':new Intl.NumberFormat('pl-PL',{maximumFractionDigits:1}).format(s.distance)+' km')+' w linii prostej':''].filter(Boolean).join(' · ');
+ return `<article class="panel hotel-card"><div class="hotel-top"><span class="card-icon">${icon('bed')}</span>
+ <button type="button" aria-label="${saved?'Usuń z zapisanych':'Zapisz nocleg'}: ${h(s.name)}" aria-pressed="${saved}" class="icon-button${saved?' is-saved':''}" data-action="save-hotel" data-id="${h(s.id)}">${icon('heart')}</button></div>
+ <small>${h(meta)}</small><h2>${h(s.name)}</h2>
+ <div class="actions">${external(findStay(query,dates),'Booking.com','button secondary')}${external(reviewsLink(query),'Tripadvisor','button secondary')}
+ ${external(map(Number.isFinite(s.lat)?s.lat+','+s.lon:query),'Mapa','button secondary')}${selectingHotel?act('Przypnij nocleg','attach-hotel','primary',s.id):''}</div></article>`;
+}
+function refreshHotels(){
+ const results=document.querySelector('#hotel-results'), links=document.querySelector('#hotel-links');
+ if(results&&links){const dates=hotelDates();results.innerHTML=hotelResults(dates);links.innerHTML=hotelLinks(dates);}
+}
+function resetLodgingRequest(){
+ clearTimeout(lodgingTimer);
+ lodgingController?.abort();
+ lodgingController=null;
+}
+function changeHotelLocation(query, radius=hotelSearch.radius){
+ resetLodgingRequest();
+ Object.assign(hotelSearch,{query,radius,status:'idle',location:null,results:[],saved:false});
+ const saved=document.querySelector('#hotel-saved');
+ if(saved)saved.checked=false;
+ refreshHotels();
+}
+async function searchHotels(){
+ resetLodgingRequest();
+ const query=hotelSearch.query.trim(), radius=hotelSearch.radius;
+ if(query.length<2)return;
+ const controller=new AbortController();
+ lodgingController=controller;
+ hotelSearch.status='loading';
+ refreshHotels();
+ try{
+  const location=await findLodgingLocation(query,controller.signal);
+  if(controller.signal.aborted)return;
+  hotelSearch.location=location;
+  if(!location){hotelSearch.status='unknown';return;}
+  refreshHotels();
+  const results=await findLodging(location,radius,controller.signal);
+  if(controller.signal.aborted)return;
+  hotelSearch.results=results;
+  hotelSearch.status='ready';
+ }catch{
+  if(!controller.signal.aborted)hotelSearch.status='error';
+ }finally{
+  if(!controller.signal.aborted){lodgingController=null;refreshHotels();}
+ }
+}
+function rememberLodging(id){
+ if(stayById[id]||state.liveStays[id])return true;
+ const stay=normalizeSavedLodging(hotelSearch.results.find(s=>s.id===id));
+ if(!stay)return false;
+ state.liveStays[id]=stay;
+ return true;
 }
 
 function journalView(){
@@ -274,13 +366,9 @@ function settingsView(){
  <section class="panel settings-card"><h2>Ilustracje i zdjęcia</h2><div id="photo-credits">${photoCredits()}</div></section></div>`;
 }
 function photoCredits(){
- const imageCredits=[
-  ['Zamek w Łańcucie · Adam Andrzejewski','https://commons.wikimedia.org/wiki/File:Lańcut-castle.jpg','CC BY 3.0','https://creativecommons.org/licenses/by/3.0/'],
-  ['Jezioro Solińskie · Zygmunt Put','https://commons.wikimedia.org/wiki/File:Solińskie_Lake,_view_to_S,_San_river,_Subcarpathian_Voivodeship,_Poland.jpg','CC BY-SA 4.0','https://creativecommons.org/licenses/by-sa/4.0/'],
-  ['Panorama Przemyśla · Michał Bulsa','https://commons.wikimedia.org/wiki/File:Panorama_miasta_Przemyśl.jpg','CC BY-SA 4.0','https://creativecommons.org/licenses/by-sa/4.0/'],
- ];
- return '<p class="muted">Ilustracja otwierająca inspirowana Bieszczadami. Zdjęcia regionów są kadrowane w kartach katalogu.</p>'+
- imageCredits.map(([label,url,license,licenseUrl])=>'<p>'+external(url,h(label),'source-link')+' · '+external(licenseUrl,h(license),'source-link')+'</p>').join('');
+ const credits=destinations.filter(p=>placePhotos[p.id]).map(p=>'<li>'+h(p.name)+' · '+photoAttribution(p.id)+'</li>').join('');
+ return '<p class="muted">Ilustracja nagłówka inspirowana Bieszczadami. Zdjęcia kart są kadrowane.</p>'+
+ '<details class="photo-credits"><summary>Autorzy i licencje zdjęć miejsc</summary><ul>'+credits+'</ul></details>';
 }
 function dialog(title,body){
  if(modal.open)modal.close();
@@ -299,10 +387,11 @@ function formDialog(title,body,label,submit){
 function openPlace(id){
  const p=placeById[id]||osm.places.find(p=>p.id===id);
  if(!p)return;
- const dayOptions=current().days.map((d,i)=>[String(i),'Dzień '+(i+1)+' · '+routeById[d.route].name]);
+ const dayOptions=current().days.map((d,i)=>[String(i),'Dzień '+(i+1)+' · '+dayTitle(d,current().mood)]);
  const rating=state.ratings[id];
  dialog(p.name,`<p class="eyebrow">${h(p.town||regions[p.region].name)} · ${p.tags.map(t=>categories[t]).join(' · ')}</p>
  <p class="place-description">${h(p.description)}</p>
+ ${placePhotos[id]?`<p class="place-credit">Zdjęcie · ${photoAttribution(id)}</p>`:''}
  <div class="actions">${external(map(pointQuery(p)),'Mapa','button primary')}${external(reviewsLink(pointQuery(p)),'Tripadvisor','button secondary')}${external(p.website||sources.travel,p.website?(p.live?'OpenStreetMap':'Strona miejsca'):'Portal turystyczny','button secondary')}</div>
  ${p.live?'':`<div class="actions dialog-actions">${act(state.stars.includes(id)?'Usuń z zapisanych':'Zapisz miejsce','star','secondary',id,'heart')}
  ${act(rating?'Twoja ocena: '+rating.stars+'/5':'Oceń miejsce','rate','secondary',id)}${act(state.seen[id]?'Cofnij odwiedzenie':'Oznacz odwiedzone','visit-place','secondary',id,'check')}</div>
@@ -353,7 +442,8 @@ function changeDuration(value,write=true){
  });
 }
 function suggest(){
- const all=screen()==='odkrywaj'?filteredPlaces():destinations;
+ const mood=document.querySelector('#planner [name="mood"]')?.value;
+ const all=screen()==='odkrywaj'?filteredPlaces():destinations.filter(p=>mood!=='natura'||naturePlace(p));
  const fresh=all.filter(p=>!state.seen[p.id]), bag=fresh.length?fresh:all;
  if(!bag.length){notify('Zmień filtry, żeby wylosować miejsce.');return;}
  openPlace(bag[Math.floor(Math.random()*bag.length)].id);
@@ -408,7 +498,11 @@ document.addEventListener('click',e=>{
    const next=alternatives(trip,dayIndex).slice(0,12);
    dialog('Zmień plan dnia',`<p class="muted">Nowa trasa zastąpi przystanki, notatkę i nocleg tego dnia.</p><div class="alternative-list">${next.map(r=>`<button type="button" data-action="apply-alternative" data-id="${r.id}"><strong>${h(r.name)}</strong><small>${h(regions[routeRegion(r)].name)} · ${r.ids.length} przyst.</small></button>`).join('')||'<p>Brak wolnych tras.</p>'}</div>`);return;
   }
-  case 'apply-alternative':trip.days[dayIndex]=dayFrom(routeById[id]);save('Zmieniono plan dnia.');modal.close();render();return;
+  case 'apply-alternative': {
+   const route=alternatives(trip,dayIndex).find(option=>option.id===id);
+   if(!route)return;
+   trip.days[dayIndex]=dayFrom(route);save('Zmieniono plan dnia.');modal.close();render();return;
+  }
   case 'edit-trip':
    formDialog('Edytuj wycieczkę',`<label>Nazwa<input name="name" maxlength="90" required value="${h(trip.name)}"></label><label>Data startu<input type="date" name="date" value="${h(trip.date)}"></label>`,'Zapisz',v=>{
     const name=v.get('name').trim();
@@ -416,12 +510,17 @@ document.addEventListener('click',e=>{
     trip.name=name;trip.date=isoDay(v.get('date'));save('Zapisano wycieczkę.');
    });return;
   case 'show-hotels':case 'choose-hotel':
-   selectingHotel=action==='choose-hotel';hotelFilters={query:'',region:id,saved:false};location.hash='noclegi';return;
+   selectingHotel=action==='choose-hotel';
+   changeHotelLocation(routeById[day.route].base,10);
+   location.hash='noclegi';
+   searchHotels();return;
   case 'cancel-hotel':selectingHotel=false;location.hash='plan';return;
   case 'remove-hotel':day.stay=null;save('Usunięto nocleg z planu.');render();return;
-  case 'save-hotel':toggle(state.hotels,id);save(state.hotels.includes(id)?'Zapisano nocleg.':'Usunięto z zapisanych.');render();return;
+  case 'save-hotel':
+   if(!rememberLodging(id))return;
+   toggle(state.hotels,id);save(state.hotels.includes(id)?'Zapisano nocleg.':'Usunięto z zapisanych.');refreshHotels();return;
   case 'attach-hotel':
-   if(selectingHotel&&dayIndex<trip.days.length-1){day.stay=id;selectingHotel=false;save('Przypięto nocleg do wycieczki.');location.hash='plan';}
+   if(selectingHotel&&dayIndex<trip.days.length-1&&rememberLodging(id)){day.stay=id;selectingHotel=false;save('Przypięto nocleg do wycieczki.');location.hash='plan';}
    return;
   case 'open-trip':openTrip(state.trips.find(t=>t.id===id));return;
   case 'delete-trip': {
@@ -439,6 +538,12 @@ document.addEventListener('click',e=>{
  }
 });
 document.addEventListener('submit',e=>{
+ if(e.target.id==='hotel-location-form'){
+  e.preventDefault();
+  const values=new FormData(e.target);
+  changeHotelLocation(String(values.get('location')??''),Number(values.get('radius')));
+  searchHotels();return;
+ }
  if(e.target.id!=='planner')return;
  e.preventDefault();
  const v=new FormData(e.target);
@@ -454,7 +559,10 @@ document.addEventListener('input',e=>{
  const el=e.target;
  if(el.name==='duration'&&el.validity.valid)changeDuration(Number(el.value),false);
  if(el.id==='place-search'){catalog.query=el.value;document.querySelector('#place-results').innerHTML=placeResults();}
- if(el.id==='hotel-search'){hotelFilters.query=el.value;document.querySelector('#hotel-results').innerHTML=hotelResults(hotelDates());}
+ if(el.id==='hotel-search'){
+  changeHotelLocation(el.value);
+  if(knownLocation(el.value))lodgingTimer=setTimeout(searchHotels,550);
+ }
 });
 document.addEventListener('change',e=>{
  const el=e.target, placeKeys={'place-region':'region','place-tag':'tag','place-status':'status'};
@@ -463,12 +571,10 @@ document.addEventListener('change',e=>{
   document.querySelector('#place-results').innerHTML=placeResults();
   if(el.id==='place-region'){osm={loading:false,error:false,places:[]};document.querySelector('#osm-results').innerHTML='';}
  }
- if(el.id==='hotel-region'){
-  hotelFilters.region=el.value;
-  document.querySelector('#hotel-links').innerHTML=hotelLinks(hotelDates());
-  document.querySelector('#hotel-results').innerHTML=hotelResults(hotelDates());
+ if(el.id==='hotel-radius'){
+  changeHotelLocation(hotelSearch.query,Number(el.value));searchHotels();
  }
- if(el.id==='hotel-saved'){hotelFilters.saved=el.checked;document.querySelector('#hotel-results').innerHTML=hotelResults(hotelDates());}
+ if(el.id==='hotel-saved'){hotelSearch.saved=el.checked;refreshHotels();}
  if(el.id==='backup-file'&&el.files[0]){loadBackup(el.files[0]);el.value='';}
 });
 function download(){
@@ -484,10 +590,14 @@ async function loadBackup(file){
   if(state.trips.length+newTrips.length>500)throw Error('backup');
   state.trips.push(...newTrips);
   state.stars=[...new Set([...state.stars,...incoming.stars])];state.hotels=[...new Set([...state.hotels,...incoming.hotels])];
+  state.liveStays={...incoming.liveStays,...state.liveStays};
   state.seen={...incoming.seen,...state.seen};state.ratings={...incoming.ratings,...state.ratings};
   save('Dodano dane z kopii. Wycieczki o tej samej tożsamości zachowały dane z urządzenia.');render();
  }catch{notify('Ten plik nie jest poprawną kopią Checkpoint Podkarpacie.');}
 }
+document.addEventListener('error',e=>{
+ if(e.target.matches?.('img.place-photo'))e.target.hidden=true;
+},true);
 window.addEventListener('hashchange',()=>{if(screen()!=='noclegi')selectingHotel=false;render();if(location.hash!=='#app')window.scrollTo(0,0);});
 render();
 save();

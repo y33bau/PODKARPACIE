@@ -7,6 +7,24 @@ const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) +
 const tagsForMood = {natura:['natura','szlak'],zabytki:['zabytki','muzeum'],rodzina:['rodzina'],relaks:['relaks']};
 const startRoutes = {'Łańcut':'zamek','Rzeszów':'rzcentrum','Przemyśl':'przemysl','Sanok':'sanok','Krosno':'kro','Tarnobrzeg':'tarn','Ustrzyki Dolne':'sol','Horyniec-Zdrój':'rad'};
 
+const naturePlace = place => place.tags.includes('natura') ||
+  (place.tags.includes('szlak') && !place.tags.some(tag => tag === 'zabytki' || tag === 'muzeum'));
+
+function routeForMood(route, mood) {
+  if (mood !== 'natura') return route;
+  const ids = route.ids.filter(id => naturePlace(placeById[id]));
+  return ids.length ? {...route, ids, name:natureTitle(route, ids)} : null;
+}
+
+function natureTitle(route, ids) {
+  return ids.length === route.ids.length ? route.name : ids.map(id => placeById[id].name).join(' i ');
+}
+
+function dayTitle(day, mood) {
+  const route = routeById[day.route];
+  return mood === 'natura' ? routeForMood(route, mood)?.name ?? route.name : route.name;
+}
+
 function dayFrom(route) {
   return {route:route.id, ids:[...route.ids], done:[], complete:false, note:'', stay:null};
 }
@@ -16,7 +34,8 @@ function buildTrip(config, history = {}) {
   const firstRegion = area === 'all' ? originRegions[origin] : area;
   const order = regionLoops[firstRegion];
   const desiredBlock = duration > 8 ? 3 : 2;
-  const byRegion = Object.fromEntries(order.map(region => [region, routes.filter(route => routeRegion(route) === region)]));
+  const available = routes.map(route => routeForMood(route, mood)).filter(Boolean);
+  const byRegion = Object.fromEntries(order.map(region => [region, available.filter(route => routeRegion(route) === region)]));
   const claimed = new Set();
   const days = [];
   for (const region of order) {
@@ -29,12 +48,12 @@ function buildTrip(config, history = {}) {
     }
     if (days.length === duration) break;
   }
-  for (const route of routes) {
+  for (const route of available) {
     if (days.length === duration) break;
     if (!claimed.has(route.id)) days.push(dayFrom(route));
   }
   const theme = area === 'all' ? regions[firstRegion].short : regions[area].short;
-  const name = duration === 1 ? routeById[days[0].route].name : duration > 5 && (area === 'all' || days.some(day => routeRegion(routeById[day.route]) !== area)) ? 'Objazd Podkarpacia' : theme;
+  const name = duration === 1 ? dayTitle(days[0], mood) : duration > 5 && (area === 'all' || days.some(day => routeRegion(routeById[day.route]) !== area)) ? 'Objazd Podkarpacia' : theme;
   return {id:uid(),name,origin,mood,area,date,days,created:Date.now()};
 
   function rank(route) {
@@ -55,7 +74,7 @@ function alternatives(trip,index) {
   const region = routeRegion(routeById[current.route]);
   const preferred = tagsForMood[trip.mood] ?? [];
   const score = route => (routeRegion(route) === region ? 10 : 0) + route.ids.filter(id => placeById[id].tags.some(tag => preferred.includes(tag))).length;
-  return routes.filter(route => !usedRoutes.has(route.id) && !route.ids.some(id => usedPlaces.has(id))).sort((a,b)=>score(b)-score(a));
+  return routes.map(route => routeForMood(route, trip.mood)).filter(route => route && !usedRoutes.has(route.id) && !route.ids.some(id => usedPlaces.has(id))).sort((a,b)=>score(b)-score(a));
 }
 
 function isoDay(start,add=0) {
