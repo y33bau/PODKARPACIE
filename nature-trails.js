@@ -10,6 +10,9 @@ const natureSources = {
   forest:'https://lutowiska.krosno.lasy.gov.pl/polozenie/-/asset_publisher/kCS6/content/sciezki-przyrodniczo-dydaktyczne',
   magura:'https://mpn.gov.pl/',
 };
+const relaxedTrails = new Set([
+  'sine-wiry','torfowiska-tarnawa','hylaty-wodospad','desznica-wieza','horyniec-wieza','kobyle-jezioro',
+]);
 const natureTrails = [
   ['tarnica-wolosate','Tarnica z Wołosatego','Wołosate','bieszczady','Punkt kasowy BdPN Wołosate',
    'Wołosate → Przełęcz pod Tarnicą → Tarnica → Wołosate','Niebieski szlak do przełęczy, potem krótkie żółte dojście pod krzyż. Podejście jest miejscami strome.',natureSources.parkPaths,1,1],
@@ -85,7 +88,7 @@ const natureTrails = [
    'Narol → wyznaczona ścieżka przyrodnicza „Kobyle Jezioro”','Spokojna propozycja do obserwacji lasu i terenów podmokłych na Roztoczu.', 'https://zpkprzemysl.pl/index.php?fsid=76&ssid=83',0,0],
 ].map(([slug,name,town,region,trailhead,itinerary,description,website,scenic,park])=>({
   id:'trail-'+slug,name,town,region,trailhead,itinerary,description,website,park:!!park,
-  tags:scenic?['widokowy','szlak','natura']:['szlak','natura']
+  tags:[...(scenic?['widokowy']:[]),'szlak','natura',...(relaxedTrails.has(slug)?['rodzina','relaks']:[])]
 }));
 
 const natureDayBases = {

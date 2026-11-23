@@ -65,7 +65,25 @@ function dayFrom(route) {
   return {route:route.id, ids:[...route.ids], done:[], complete:false, note:'', stay:null};
 }
 
-function buildTrip(config, history = {}) {
+function pickRoute(candidates, score, recent, random) {
+  const ranked = candidates.map(route => ({route,score:score(route)}));
+  const best = Math.max(...ranked.map(candidate => candidate.score));
+  // Losowanie obejmuje tylko trasy o podobnej ocenie.
+  const comparable = ranked.filter(candidate => candidate.score >= best - 1.75);
+  const different = comparable.filter(({route}) => !recent.routes.has(route.id));
+  const options = different.length ? different : comparable;
+  const differentAreas = options.filter(({route}) => !recent.areas.has(bieszczadyByRoute[route.id]?.area));
+  const pool = differentAreas.length ? differentAreas : options;
+  const weights = pool.map(candidate => 2 ** (candidate.score - best));
+  let ticket = random() * weights.reduce((sum, weight) => sum + weight, 0);
+  for (const [index, candidate] of pool.entries()) {
+    ticket -= weights[index];
+    if (ticket < 0) return candidate.route;
+  }
+  return pool.at(-1).route;
+}
+
+function buildTrip(config, history = {}, previous = null, random = Math.random) {
   const {duration, mood, origin, area, date} = config;
   const firstRegion = area === 'all' ? originRegions[origin] : area;
   const order = regionLoops[firstRegion];
@@ -74,21 +92,27 @@ function buildTrip(config, history = {}) {
   const byRegion = Object.fromEntries(order.map(region => [region, available.filter(route => routeRegion(route) === region)]));
   const claimed = new Set();
   const days = [];
+  const previousRoutes = previous?.days.map(day => day.route) ?? [];
+  const recent = {
+    routes:new Set(previousRoutes),
+    areas:new Set(previousRoutes.map(id => bieszczadyByRoute[id]?.area).filter(Boolean)),
+  };
+  function takeDay(candidates) {
+    const route = pickRoute(candidates, r => rank(r) - routeRepetition(r,claimed), recent, random);
+    candidates.splice(candidates.indexOf(route),1);
+    claimed.add(route.id);
+    days.push(dayFrom(route));
+  }
   for (const region of order) {
     const candidates = [...byRegion[region]];
     const block = region === firstRegion && area !== 'all' ? duration : (region === firstRegion && duration === 1 ? 1 : desiredBlock);
     for (let i = 0; i < block && days.length < duration && candidates.length; i++) {
-      const ranked = candidates.map(route => ({route,score:rank(route) - routeRepetition(route,claimed)}));
-      const {route} = ranked.reduce((best,candidate) => candidate.score > best.score ? candidate : best);
-      candidates.splice(candidates.indexOf(route),1);
-      claimed.add(route.id);
-      days.push(dayFrom(route));
+      takeDay(candidates);
     }
     if (days.length === duration) break;
   }
   const remaining = available.filter(route => !claimed.has(route.id));
-  remaining.sort((a,b) => routeRepetition(a,claimed) - routeRepetition(b,claimed));
-  for (const route of remaining.slice(0,duration - days.length)) days.push(dayFrom(route));
+  while (days.length < duration && remaining.length) takeDay(remaining);
   const theme = area === 'all' ? regions[firstRegion].short : regions[area].short;
   const name = duration === 1 ? dayTitle(days[0], mood) : duration > 5 && (area === 'all' || days.some(day => routeRegion(routeById[day.route]) !== area)) ? 'Objazd Podkarpacia' : theme;
   return {id:uid(),name,origin,mood,area,date,days,created:Date.now()};
@@ -100,8 +124,8 @@ function buildTrip(config, history = {}) {
     const fresh = points.filter(place => !history[place.id]).length / points.length;
     const localStart = route.id === startRoutes[origin] && routeRegion(route) === firstRegion;
     const known = regions[routeRegion(route)].town === route.base;
-    const trailBonus = mood === 'natura' && points.some(place => place.itinerary) ? 1 : 0;
-    return affinity * 7 + fresh * 1.5 + (localStart ? (mood === 'mix' ? 10 : mood === 'natura' ? 0.3 : 3) : 0) + (known ? 0.2 : 0) + trailBonus;
+    const trailBonus = mood === 'natura' && points.some(place => place.itinerary) ? 2 : 0;
+    return affinity * 7 + fresh * 1.5 + (localStart ? 1.1 : 0) + (known ? 0.2 : 0) + trailBonus;
   }
 }
 

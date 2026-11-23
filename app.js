@@ -681,7 +681,8 @@ document.addEventListener('submit',e=>{
  const config={origin:v.get('origin'),area:v.get('area'),mood:v.get('mood'),date:isoDay(v.get('date')),duration:Number(v.get('duration'))};
  if(!Number.isInteger(config.duration)||config.duration<1||config.duration>14)return;
  if(state.trips.length>=500){notify('Masz 500 wycieczek. Usuń jedną w dzienniku, aby dodać następną.');return;}
- const trip=buildTrip(config,state.seen);
+ const previous=state.trips.find(t=>t.origin===config.origin&&t.area===config.area&&t.mood===config.mood&&t.days.length===config.duration);
+ const trip=buildTrip(config,state.seen,previous);
  state.trips.unshift(trip);openTrip(trip);
  notify('Ułożono wycieczkę na '+daysText(config.duration)+'.');
  document.querySelector('#itinerary-heading').scrollIntoView({block:'start',behavior:'smooth'});
